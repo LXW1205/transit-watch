@@ -12,6 +12,7 @@
     "dev:web": "vite",
     "build": "tsc --noEmit && vite build",
     "start": "node server/index.mjs",
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "scrape:buses": "node scrape_buses.js",
     "scrape:flights": "node scrape_flights.js"

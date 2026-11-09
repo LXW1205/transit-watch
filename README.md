@@ -1,146 +1,125 @@
-# Travel scrapers — bus availability + flight prices
+# Transit Watch
 
-Two self-contained Node scripts. **Zero dependencies** (Node 22+, built-in `fetch`/`WebSocket`).
+Live bus tracking and flight prices for the Cyberjaya MRT feeder routes (T504, T505)
+and KBR ↔ KUL.
+
+- **Bus tab** — Leaflet map with the route shape, stops, live vehicle positions, and
+  per-stop ETAs, plus the published timetable.
+- **Flights tab** — round-trip / one-way fare search with an optional cheapest-date sweep.
+
+## Quick start
+
+```bash
+npm install
+npm run dev            # API on :8787, Vite on :5173 (proxies /api)
+```
+
+Production: `npm run build && npm start` — the server serves `dist/` and the API on one port.
+
+| env | default | meaning |
+|---|---|---|
+| `PORT` | `8787` | API port |
+| `ROUTES` | `T504,T505` | routes the Bus tab preselects |
+| `DATA_DIR` | `./data` | GTFS cache (gitignored) |
+
+## Architecture
 
 ```
-node scrape_buses.js   [route ...]              # routes by name (T504) or kiosk id (1043)
+server/index.mjs        Express API — see docs/API.md for the frozen contract
+server/lib/gtfs.mjs     data.gov.my GTFS static: download, cache, parse, index
+server/lib/live.mjs     kiosk Socket.IO collector → vehicle positions
+server/lib/eta.mjs      delay-based ETA from timetable + live position
+server/lib/flights.mjs  Google Flights fetch + parse (+ 10 min cache)
+web/src/                Vite + React + TypeScript + Leaflet
+test/                   node:test suite, offline-safe
+scrape_*.js             standalone CLIs over the same libs
+```
+
+## Data sources
+
+| Concern | Source | Status |
+|---|---|---|
+| Timetable, stops, shapes, trips | [data.gov.my GTFS static](https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-mrtfeeder) | authoritative |
+| Live vehicle positions | MyRapid kiosk Socket.IO | verified working |
+| Fares | Google Flights (server-rendered HTML) | verified working |
+
+**GTFS-RT is not usable for these routes** — the feed carries ~79 vehicles but none on
+T504/T505, and its `route_id` is a display name (`"T155 Inbound"`), not the static id.
+That is why live positions still come from the kiosk socket.
+
+ETAs are ours to compute: there is no trip-update feed. `server/lib/eta.mjs` snaps each
+vehicle to the route shape, finds the scheduled trip that best explains its current
+position, and projects that delay onto the stops ahead. Vehicles that are not serving
+(`off_trip`) never produce ETAs — they stay on the map but cannot be "arriving".
+
+### Gotchas already paid for
+
+**GTFS static** — `routes.txt` puts the route name in `route_long_name`; `route_short_name`
+is empty. Static `route_id` is numeric (`T504` = `30000150`). Stop ids served are
+`stop_code` values (`SP398`). The calendar covers a rolling ~4 weeks, so the feed expires
+and must be refreshed.
+
+**Kiosk socket** — three things are required or nothing is ever pushed: open the namespace
+(`40`), emit `onFts-reload` **with an ack id** (`421[...]`), and send an **inline object**
+payload (not a stringified string). Answer engine.io pings (`2` → `3`). The payload is
+`base64(gzip(json))`. Route codes come back as `T5040`, and `dir` is opaque.
+
+**Google Flights** — dates must be in the future (past dates return HTTP 200 with an empty
+result set). The `tfs` param is a URL-safe-base64 protobuf; **field 2 must be omitted for
+one-way** or the search silently returns nothing. Labels contain a U+202F narrow no-break
+space before `AM/PM`.
+
+**MyRapid's HTML host sits behind Imperva Incapsula** — `curl`/`fetch` gets a JS challenge
+there. The websocket host is not challenged, which is why the socket path works from a script.
+
+## API
+
+`docs/API.md` is the contract (`/api/health`, `/api/routes`, `/api/route/:name`,
+`/api/route/:name/live`, `/api/flights`). It is the source of truth for shapes; both sides
+of the app are built against it.
+
+```bash
+curl localhost:8787/api/health
+curl localhost:8787/api/route/T504/live
+curl 'localhost:8787/api/flights?from=KBR&to=KUL&out=2026-11-18&ret=2026-11-25'
+```
+
+## CLIs
+
+Still available, same libs, JSON on stdout and diagnostics on stderr.
+
+```bash
+node scrape_buses.js   [route ...]              # name (T504) or kiosk id (1043)
 node scrape_flights.js <ORIGIN> <DEST> <out> [ret] [flags]
-
-node scrape_buses.js 1043 1044
-node scrape_flights.js KBR KUL 2026-11-04 2026-11-18
-node scrape_flights.js KBR KUL 2026-11-04 --oneway
-node scrape_flights.js KBR KUL 2026-11-04 2026-11-18 --sweep 7
 ```
-
-### Contract (for scheduled runs)
 
 | | |
 |---|---|
-| stdout | exactly one JSON document, always |
-| stderr | human-readable progress / diagnostics |
-| exit `0` | scrape succeeded (even if the honest answer is 0 buses / 0 fares) |
-| exit `1` | scrape failed — JSON still emitted, with `ok:false` and `error.reason` |
+| exit `0` | success (even if the honest answer is 0 buses / 0 fares) |
+| exit `1` | scrape failed — JSON still emitted with `ok:false` and `error.reason` |
 | exit `2` | bad usage |
 
-`error.reason` values: `past_date`, `http_<code>`, `blocked`, `consent_wall`,
-`truncated`, `unexpected_page`, `timeout`, `network`, `empty_results`,
-`parse_failed` (flights); `no_payload`, `connect`, `decode` (buses).
+`error.reason`: `past_date`, `http_<code>`, `blocked`, `consent_wall`, `truncated`,
+`unexpected_page`, `timeout`, `network`, `empty_results`, `parse_failed` (flights);
+`no_payload`, `connect`, `decode` (buses).
 
----
+## Tests
 
-## 1. Bus availability — `scrape_buses.js`
-
-Source: `https://myrapidbus.prasarana.com.my/kiosk?route=1043&bus=, T504, T505`
-
-The kiosk page is server-rendered (stops, route shapes, coordinates all inline), but
-**live positions are not in the HTML** — they arrive over a Socket.IO push channel:
-
-```
-wss://rapidbus-socketio-avl.prasarana.com.my/socket.io/?EIO=4&transport=websocket
+```bash
+npm test        # node:test — 46 tests, ~5 s
 ```
 
-Protocol gotchas — all three are required to get any data back:
+The suite is offline-safe: GTFS-dependent tests skip when `data/gtfs_rapid_bus_mrtfeeder.zip`
+is absent, and the flight tests run against a saved HTML fixture. A stub websocket is
+preloaded into the spawned API server so the live path runs without network.
 
-1. Open the namespace first: send `40`, wait for `40{"sid":...}`.
-2. Emit `onFts-reload` **with an ack id**: `421["onFts-reload",{...}]`. Without the
-   `1` the handler never invokes its callback and *nothing is ever pushed*.
-3. The payload must be an **inline object**, not stringified twice.
-   `421["onFts-reload","{\"sid\":...}"]` is silently accepted and yields nothing.
-4. Answer Engine.IO pings: on packet `2`, reply `3`.
+## Known limitations
 
-Payload is `base64(gzip(json))` → `zlib.gunzipSync(Buffer.from(s,'base64'))`.
-
-**Completing a run.** The server sends one payload per emit, but a payload can't be
-attributed to a route until buses in it are matched — so a route with *no buses
-running* would never look "done". The script therefore finishes when every route has
-a bus, else after an idle window, and treats "received ≥1 payload" as success even
-if it ends with 0 buses. At 2am that is the true answer; only zero payloads within
-`--timeout` is an error (`no_payload`, exit 1).
-
-Per-bus fields: `bus_no`, `route` (e.g. `T5040`), `direction`, `lat`, `lng`,
-`speed_kmh`, `status`, `gps_time`, `gps_age_s`, `live`.
-
-`trip_rev_kind` legend (from the page's icon mapping):
-`00` on_trip · `99` off_trip · `01`/`03`/`05` contingency.
-GPS older than 5 min is stale — the kiosk page uses the same 5-min cutoff.
-
-**Route aliases.** `route_ids.json` maps the kiosk's numeric ids to route names
-(504 entries, parsed from the page's `<select>`): `1043 → T504`, `1044 → T505`.
-Names are also accepted directly.
-
-**Response matching.** A route name matches `^<name>\d?$`, so `T504` accepts the
-variant `T5040` (name + direction digit) without letting `T50` swallow `T504`.
-
----
-
-## 2. Flight prices — `scrape_flights.js`
-
-Source: `https://www.google.com/travel/flights?gl=US&hl=en-US`
-
-**A plain `fetch` is enough — no browser, no Playwright.** Results are server-rendered
-into the HTML as `aria-label` attributes on each result card:
-
-```
-From 62 US dollars round trip total. Nonstop flight with AirAsia. Leaves Kota Bharu
-Sultan Ismail Petra Airport at 10:00 AM on Wednesday, November 4 and arrives at
-Kuala Lumpur International Airport at 11:10 AM ... Total duration 1 hr 10 min.
-```
-
-Four gotchas:
-
-1. **Dates must be in the future.** Past dates return HTTP 200 with an empty result
-   set — indistinguishable from a scraping bug. Checked up front (`past_date`).
-2. The `tfs` query param is URL-safe-base64 protobuf describing the search; this
-   script builds it (f1=28, f2=trip, f3=segment{2:date, 13:origin, 14:dest},
-   f8/f9=pax, f14=cabin, f16=sentinel, f19=1).
-3. **`f2=1` must never be emitted for a one-way search** — it silently returns zero
-   results. Google infers trip type from the number of segments; the only value of
-   f2 that works is `2`, even with a single segment. So round-trip emits `f2=2`,
-   one-way omits field 2 entirely. (Probed 8 token shapes to establish this.)
-4. Google emits **U+202F** (narrow no-break space) between the time and `AM/PM`.
-   Normalise labels with `\s+ → ' '` *and* match times with `\s?`, or the regex
-   fails on every card while still looking correct.
-
-Duplicates are expected (Google renders each card more than once); deduped on
-airline + departure time + price + stops.
-
-### `--sweep N`
-
-Scans N consecutive departure days, holding trip length constant (the return date
-moves with the departure). Reports `cheapest_overall` / `cheapest_date` plus a
-per-day breakdown. Sequential requests with a small gap.
-
-### Change detection (`state/`)
-
-Both scripts persist last run to `state/` and emit a delta:
-
-```jsonc
-// flights: state/history.json, keyed origin-dest|RT|out|ret
-"change": { "previous_price": 67, "delta": -5, "previous_fetched_at": "..." }
-// buses: state/buses.json, keyed route name
-"change": { "previous_live": 3, "delta_live": 1, "previous_total": 4, "delta_total": -1, ... }
-```
-
-Top-level `any_price_change` / `any_change` flags make it trivial for a scheduled
-run to say only something when it matters. Disable with `--no-history`, relocate
-with `--state <path>`.
-
-### Robustness
-
-Retries (3×, exponential backoff) on `timeout`/`network`/`http_*`, but **not** on
-`blocked`/`consent_wall` — those won't improve on retry. Each response is classified
-before parsing: bot challenge, consent interstitial, truncated body, or missing
-Google Flights marker all fail loudly instead of returning 0 flights.
-
----
-
-## Testing notes
-
-The MyRapid site sits behind Imperva Incapsula — `curl`/`fetch` of the *HTML* gets a
-JS challenge (assets 302-loop), but the **AVL websocket host is not challenged**, so
-the socket path works fine from a script. The `sid` embedded in `scrape_buses.js` was
-scraped from the kiosk page and is not validated server-side.
-
-Verified: route-id aliases, one-way, round trip, `--sweep`, history deltas on both
-scripts, and every error path (past date, missing return, bad flag, unknown route id,
-socket timeout) — each returns the right exit code and a valid JSON document.
+- **ETA accuracy is timetable-proportional.** It assumes the matched trip's shape of running
+  time; a long dwell is carried forward to every stop ahead. Loop legs within ~150 m of each
+  other are told apart by which implies the smaller delay, so a bus >45 min off schedule can
+  snap to the wrong leg.
+- **GTFS refresh** rebuilds the whole model (~1 s CPU, ~75 MB heap), checked hourly.
+- **Flight scraping is fragile by nature** — it depends on Google's current DOM. The parser
+  fails loudly rather than returning an empty list, so breakage is visible.
+- No persistence: prices and ETAs live in memory only.
