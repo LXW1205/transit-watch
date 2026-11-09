@@ -1,9 +1,15 @@
 # Runtime history written by the scrapers — regenerable, machine-local.
 state/
 
+# Server-side GTFS cache (downloaded feeds + parsed artefacts).
+data/
+
 # Node
 node_modules/
-package-lock.json
+
+# Build output
+dist/
+.vite/
 
 # Editor / OS
 .DS_Store
