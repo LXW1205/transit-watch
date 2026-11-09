@@ -1,0 +1,11 @@
+# Runtime history written by the scrapers — regenerable, machine-local.
+state/
+
+# Node
+node_modules/
+package-lock.json
+
+# Editor / OS
+.DS_Store
+*.swp
+*.log
