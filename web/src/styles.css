@@ -22,6 +22,13 @@
   --radius: 10px;
   --gap: 16px;
   --map-h: clamp(320px, 62vh, 660px);
+
+  /* Map palette — deliberately separate from --accent: a UI accent and a line
+     drawn over raster tiles need different saturation and weight. Teal sits
+     clear of OSM's greens (parks) and blues (water) in both schemes. */
+  --map-route: #0f766e;
+  --map-casing: #ffffff;
+  --map-stop-ring: #8a93a0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +48,12 @@
     --warn: #f0c070;
     --warn-soft: #362c17;
     --ok: #74d3a3;
+
+    /* Inverted tiles make the basemap dark, so the line needs to be lighter
+       than in light mode and its casing darker rather than white. */
+    --map-route: #2dd4bf;
+    --map-casing: #0b0f14;
+    --map-stop-ring: #aab3c0;
   }
 }
 
@@ -483,15 +496,42 @@ button:focus-visible {
 .legend-dot--stop {
   width: 8px;
   height: 8px;
-  background: var(--muted);
+  background: var(--surface);
+  border-color: var(--map-stop-ring);
 }
 
-.legend-dot--bus {
-  background: var(--accent);
+.legend-bus {
+  margin-left: 4px;
+  font-size: 14px;
+  line-height: 1;
 }
 
-.legend-dot--bus-dim {
-  background: var(--surface-3);
+.legend-bus--dim {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+/* Live vehicle marker: the emoji carries the "this is a bus" read, the badge
+   keeps it legible over dark and light tiles alike. */
+.bus-marker-wrap {
+  background: none;
+  border: none;
+}
+
+/* Live vehicle marker: the emoji carries the "this is a bus" read. The badge is
+   dark because the emoji is light-bodied — on a white chip it washes out at 1x. */
+.bus-marker {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #0f172a;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.5);
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
 }
 
 .map-note {

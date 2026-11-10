@@ -24,6 +24,7 @@ interface RouteMapProps {
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const BUS_EMOJI = '🚌';
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -49,15 +50,16 @@ function themeColor(name: string, fallback: string): string {
 export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const shapeLayerRef = useRef<L.Polyline | null>(null);
+  const shapeLayerRef = useRef<L.LayerGroup | null>(null);
   const stopLayersRef = useRef(new Map<string, L.CircleMarker>());
-  const vehicleLayersRef = useRef(new Map<string, L.CircleMarker>());
+  const vehicleLayersRef = useRef(new Map<string, L.Marker>());
   const fittedRef = useRef<string>('');
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
 
-  // Map lifecycle: one map per mounted container. Default marker icons are never
-  // used (they 404 under bundlers); every marker below is a circle marker.
+  // Map lifecycle: one map per mounted container. Leaflet's default marker icon
+  // is never used (it 404s under bundlers); stops are circle markers and buses
+  // get a divIcon carrying the emoji.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -86,13 +88,26 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
     shapeLayerRef.current = null;
     if (shape.length < 2) return;
 
-    shapeLayerRef.current = L.polyline(shape, {
-      color: themeColor('--accent', '#1f5fbf'),
-      weight: 5,
-      opacity: 0.9,
-      lineJoin: 'round',
-      lineCap: 'round',
-    }).addTo(map);
+    // A casing sits under the line so it stays readable where it crosses water,
+    // parks or roads — cheaper and calmer than giving the line a second colour.
+    shapeLayerRef.current = L.layerGroup([
+      L.polyline(shape, {
+        color: themeColor('--map-casing', '#ffffff'),
+        weight: 9,
+        opacity: 0.7,
+        lineJoin: 'round',
+        lineCap: 'round',
+        interactive: false,
+      }),
+      L.polyline(shape, {
+        color: themeColor('--map-route', '#0f766e'),
+        weight: 4,
+        opacity: 0.95,
+        lineJoin: 'round',
+        lineCap: 'round',
+        interactive: false,
+      }),
+    ]).addTo(map);
   }, [shape]);
 
   // Fit the view once per route+direction, falling back to the stops when the
@@ -119,7 +134,8 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
     const map = mapRef.current;
     if (!map) return;
 
-    const accent = themeColor('--accent', '#1f5fbf');
+    const routeColor = themeColor('--map-route', '#0f766e');
+    const stopRing = themeColor('--map-stop-ring', '#8a93a0');
     const layers = stopLayersRef.current;
     const seen = new Set<string>();
 
@@ -130,11 +146,11 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
       let marker = layers.get(stop.stopId);
       if (!marker) {
         marker = L.circleMarker([stop.lat, stop.lng], {
-          radius: 4.5,
-          weight: 1.5,
-          color: themeColor('--muted', '#626773'),
-          opacity: 0.9,
-          fillColor: themeColor('--surface', '#ffffff'),
+          radius: 4,
+          weight: 1.4,
+          color: stopRing,
+          opacity: 0.95,
+          fillColor: '#ffffff',
           fillOpacity: 1,
         }).addTo(map);
         layers.set(stop.stopId, marker);
@@ -142,9 +158,10 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
 
       marker.setLatLng([stop.lat, stop.lng]);
       marker.setStyle({
-        radius: served ? 5.5 : 4.5,
-        fillColor: served ? accent : themeColor('--surface', '#ffffff'),
-        color: served ? accent : themeColor('--muted', '#626773'),
+        radius: served ? 5 : 4,
+        weight: served ? 2 : 1.4,
+        color: served ? routeColor : stopRing,
+        fillColor: '#ffffff',
       });
 
       const label = served
@@ -166,8 +183,6 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
     const map = mapRef.current;
     if (!map) return;
 
-    const accent = themeColor('--accent', '#1f5fbf');
-    const dim = themeColor('--muted', '#626773');
     const layers = vehicleLayersRef.current;
     const seen = new Set<string>();
 
@@ -175,28 +190,28 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
       seen.add(vehicle.busNo);
       const matches = vehicle.directionId === directionId;
       const unknown = vehicle.directionId === null;
-      const radius = matches ? 8 : unknown ? 7 : 6;
 
       let marker = layers.get(vehicle.busNo);
       if (!marker) {
-        marker = L.circleMarker([vehicle.lat, vehicle.lng], {
-          radius,
-          weight: 2,
-          color: themeColor('--surface', '#ffffff'),
-          fillColor: accent,
-          fillOpacity: 1,
+        marker = L.marker([vehicle.lat, vehicle.lng], {
+          icon: L.divIcon({
+            className: 'bus-marker-wrap',
+            html:
+              `<span class="bus-marker" role="img" aria-label="bus ${escapeHtml(vehicle.busNo)}">` +
+              `${BUS_EMOJI}</span>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+          }),
+          keyboard: false,
         }).addTo(map);
         layers.set(vehicle.busNo, marker);
       }
 
       marker.setLatLng([vehicle.lat, vehicle.lng]);
-      marker.setStyle({
-        radius,
-        fillColor: matches || unknown ? accent : dim,
-        color: themeColor('--surface', '#ffffff'),
-        fillOpacity: vehicle.live ? (matches ? 0.95 : 0.55) : 0.3,
-      });
-      if (matches) marker.bringToFront();
+      // A bus matched to the shown direction reads solid; an unmatched or stale
+      // one is ghosted rather than hidden, so a failed match never hides a bus.
+      marker.setOpacity(!vehicle.live ? 0.35 : matches ? 1 : unknown ? 0.8 : 0.4);
+      marker.setZIndexOffset(matches ? 1000 : unknown ? 500 : 0);
 
       const next = vehicle.nextStop
         ? `Next ${escapeHtml(vehicle.nextStop.name)}${
@@ -228,8 +243,8 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
       <div className="map-host" ref={hostRef} />
       <div className="map-caption" aria-hidden="true">
         <span className="legend-dot legend-dot--stop" /> stop
-        <span className="legend-dot legend-dot--bus" /> live bus
-        <span className="legend-dot legend-dot--bus-dim" /> other direction
+        <span className="legend-bus">{BUS_EMOJI}</span> live bus
+        <span className="legend-bus legend-bus--dim">{BUS_EMOJI}</span> other direction
       </div>
       {shape.length < 2 ? (
         <p className="map-note">No route shape published for this direction.</p>
