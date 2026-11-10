@@ -51,7 +51,7 @@ function candidatesFor(direction, lat, lng) {
     const dist = distAtProjection(direction.pointDist, h.index, h.t);
     // adjacent segments of one bend are one candidate, not several
     if (out.some((o) => Math.abs(o.dist - dist) < 0.05)) continue;
-    out.push({ distM: h.distM, dist });
+    out.push({ distM: h.distM, dist, index: h.index, t: h.t });
     if (out.length >= MAX_CANDIDATES) break;
   }
   return out;
@@ -108,7 +108,23 @@ function matchTrip(direction, dist, nowS, todayServices, yesterdayServices) {
   return best;
 }
 
-const NO_ESTIMATE = { directionId: null, progress: null, nextStop: null };
+const NO_ESTIMATE = { directionId: null, progress: null, nextStop: null, bearing: null };
+
+// Heading of travel at a shape segment, in degrees clockwise from north.
+// The kiosk sends no heading, and a GPS-derived one is jittery at stops, so the
+// route geometry is the stable source: the bus is following this line.
+function segmentBearing(shape, index) {
+  if (!shape || shape.length < 2) return null;
+  for (let i = Math.max(0, index); i < shape.length - 1; i++) {
+    const [aLat, aLng] = shape[i];
+    const [bLat, bLng] = shape[i + 1];
+    const dNorth = bLat - aLat;
+    const dEast = (bLng - aLng) * Math.cos((aLat * Math.PI) / 180);
+    if (Math.abs(dNorth) < 1e-9 && Math.abs(dEast) < 1e-9) continue;   // duplicate point
+    return ((Math.atan2(dEast, dNorth) * 180) / Math.PI + 360) % 360;
+  }
+  return null;
+}
 
 // direction -> Map(stopId -> canonical stop); memoised, never mutating the model
 const stopIndex = new WeakMap();
@@ -183,6 +199,7 @@ export function estimateRoute(route, vehicles, { now = Date.now(), todayServices
       directionId: direction.id,
       progress: maxDist > 0 ? Math.min(1, Math.max(0, cand.dist / maxDist)) : null,
       nextStop,
+      bearing: segmentBearing(direction.shape, cand.index),
     });
   }
 

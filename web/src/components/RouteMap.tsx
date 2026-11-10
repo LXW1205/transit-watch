@@ -25,6 +25,14 @@ const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const BUS_EMOJI = '🚌';
+// How the glyph is drawn: Noto's bus faces west (left). Rotation is applied as
+// bearing - this, so a bearing of 0 (north) makes the bus face up.
+const BUS_EMOJI_FACING_DEG = 270;
+
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+function compass(deg: number): string {
+  return COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+}
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -199,8 +207,8 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
             html:
               `<span class="bus-marker" role="img" aria-label="bus ${escapeHtml(vehicle.busNo)}">` +
               `${BUS_EMOJI}</span>`,
-            iconSize: [30, 30],
-            iconAnchor: [15, 15],
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
           }),
           keyboard: false,
         }).addTo(map);
@@ -208,6 +216,13 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
       }
 
       marker.setLatLng([vehicle.lat, vehicle.lng]);
+      // The emoji turns to face the way the bus is travelling. Bearing comes from
+      // the route geometry, so it stays steady at stops where GPS heading jitters.
+      const glyph = marker.getElement()?.firstElementChild as HTMLElement | undefined;
+      if (glyph) {
+        glyph.style.transform =
+          vehicle.bearing === null ? '' : `rotate(${(vehicle.bearing - BUS_EMOJI_FACING_DEG).toFixed(1)}deg)`;
+      }
       // A bus matched to the shown direction reads solid; an unmatched or stale
       // one is ghosted rather than hidden, so a failed match never hides a bus.
       marker.setOpacity(!vehicle.live ? 0.35 : matches ? 1 : unknown ? 0.8 : 0.4);
@@ -218,10 +233,12 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
             vehicle.nextStop.etaMin !== null ? ` in ${vehicle.nextStop.etaMin} min` : ''
           }`
         : 'No upcoming stop yet';
+      const heading =
+        vehicle.bearing === null ? 'heading unknown' : `heading ${compass(vehicle.bearing)}`;
       const label =
         `<strong>${escapeHtml(vehicle.busNo)}</strong><br>` +
         `${escapeHtml(vehicle.status.replace(/_/g, ' '))} · ` +
-        `${vehicle.speedKmh !== null ? `${vehicle.speedKmh} km/h` : 'speed n/a'}<br>` +
+        `${vehicle.speedKmh !== null ? `${vehicle.speedKmh} km/h` : 'speed n/a'} · ${heading}<br>` +
         `${next}<br>` +
         `<span class="map-tip-muted">dir ${escapeHtml(vehicle.direction ?? 'unknown')} · ${formatAge(
           vehicle.ageS,
@@ -243,7 +260,7 @@ export function RouteMap({ shape, stops, vehicles, directionId, fitKey }: RouteM
       <div className="map-host" ref={hostRef} />
       <div className="map-caption" aria-hidden="true">
         <span className="legend-dot legend-dot--stop" /> stop
-        <span className="legend-bus">{BUS_EMOJI}</span> live bus
+        <span className="legend-bus">{BUS_EMOJI}</span> live bus — points the way it is heading
         <span className="legend-bus legend-bus--dim">{BUS_EMOJI}</span> other direction
       </div>
       {shape.length < 2 ? (

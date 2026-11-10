@@ -130,6 +130,7 @@ Live positions plus per-stop ETA for one route. Polled every ~15 s by the UI.
       "status": "on_trip",              // on_trip | off_trip | contingency
       "directionId": 0,                 // best-effort match to a GTFS direction, else null
       "progress": 0.42,                 // 0..1 along that direction's shape, else null
+      "bearing": 341.7,                 // heading of travel, degrees clockwise from north; null if unmatched
       "nextStop": { "seq": 7, "stopId": "SP400", "name": "McD EDUSPHERE", "etaMin": 3 }
     }
   ],
@@ -169,6 +170,14 @@ Delay-based, computed from the GTFS timetable plus the live position:
 
 If step 2 is ambiguous (e.g. several trips overlap), pick the one minimising
 `|delay|`. Keep the implementation total and cheap: no per-request O(n²) over 175k rows.
+
+### Heading
+
+`bearing` is the direction of travel at the vehicle's projection, taken from the
+tangent of the route shape — not from GPS. The kiosk feed carries no heading, and a
+GPS-derived one jitters badly at stops where the bus is stationary; the geometry is
+stable and always agrees with the drawn line. `null` when the vehicle could not be
+snapped to a shape.
 
 ---
 

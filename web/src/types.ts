@@ -81,6 +81,11 @@ export interface LiveVehicle {
   status: 'on_trip' | 'off_trip' | 'contingency' | (string & {});
   directionId: number | null;
   progress: number | null;
+  /**
+   * Heading of travel in degrees clockwise from north, taken from the route
+   * geometry. Null when the vehicle could not be matched to the shape.
+   */
+  bearing: number | null;
   nextStop: NextStop | null;
 }
 

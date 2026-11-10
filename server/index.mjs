@@ -176,6 +176,7 @@ app.get('/api/route/:name/live', async (req, res) => {
       status: b.status,
       directionId: null,
       progress: null,
+      bearing: null,
       nextStop: null,
     };
   });
@@ -192,6 +193,7 @@ app.get('/api/route/:name/live', async (req, res) => {
     if (!est) continue;
     v.directionId = est.directionId;
     v.progress = est.progress;
+    v.bearing = est.bearing;
     v.nextStop = est.nextStop;
   }
 

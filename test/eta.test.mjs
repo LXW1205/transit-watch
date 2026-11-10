@@ -75,6 +75,7 @@ test('estimateRoute: an off_trip vehicle produces zero stop ETAs', { skip: SKIP_
     directionId: null,
     progress: null,
     nextStop: null,
+    bearing: null,
   });
   assert.equal(off.directions.flatMap((d) => d.stops).filter((s) => s.nextAt !== null).length, 0);
 
@@ -85,6 +86,10 @@ test('estimateRoute: an off_trip vehicle produces zero stop ETAs', { skip: SKIP_
   assert.equal(typeof onEstimate.nextStop.seq, 'number');
   assert.equal(typeof onEstimate.nextStop.stopId, 'string');
   assert.ok(Number.isInteger(onEstimate.nextStop.etaMin) && onEstimate.nextStop.etaMin >= 0);
+  // Heading comes from the route geometry, so a matched vehicle always has a
+  // compass bearing — the map rotates the marker by it.
+  assert.equal(typeof onEstimate.bearing, 'number', 'a matched bus must have a bearing');
+  assert.ok(onEstimate.bearing >= 0 && onEstimate.bearing < 360, 'bearing is 0..360 degrees');
 });
 
 test('estimateRoute: a vehicle with live:false produces zero stop ETAs', { skip: SKIP_GTFS }, async () => {
@@ -131,5 +136,6 @@ test('estimateRoute: nothing is invented for a vehicle off the shape', { skip: S
     directionId: null,
     progress: null,
     nextStop: null,
+    bearing: null,
   });
 });
