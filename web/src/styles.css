@@ -948,7 +948,7 @@ button:focus-visible {
 
 .flight {
   display: grid;
-  grid-template-columns: 84px minmax(130px, 1.1fr) minmax(160px, 1.4fr) 116px 86px;
+  grid-template-columns: 100px minmax(130px, 1.1fr) minmax(160px, 1.4fr) 116px 86px;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -967,6 +967,43 @@ button:focus-visible {
 .flight-price {
   font-size: 19px;
   font-weight: 700;
+}
+
+/* Price + the citation chip that opens the Google Flights search it came from. */
+.flight-cost {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.flight-source {
+  flex: none;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 120ms, border-color 120ms;
+}
+
+.flight-source:hover,
+.flight-source:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.meta-link {
+  color: var(--muted);
+  border-bottom: 1px dotted var(--border);
+  text-decoration: none;
+}
+
+.meta-link:hover,
+.meta-link:focus-visible {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 
 .flight--best .flight-price {
@@ -1021,7 +1058,7 @@ button:focus-visible {
   }
 
   .flight {
-    grid-template-columns: 76px minmax(0, 1fr) auto;
+    grid-template-columns: 88px minmax(0, 1fr) auto;
     row-gap: 4px;
   }
 

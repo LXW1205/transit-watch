@@ -221,6 +221,17 @@ export function FlightsTab() {
               </span>
               <span>·</span>
               <span>fetched {formatStamp(data.fetchedAt)}</span>
+              {current ? (
+                <a
+                  className="meta-link"
+                  href={current.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open this search on Google Flights"
+                >
+                  source: Google Flights ↗
+                </a>
+              ) : null}
               {data.cached ? <span className="badge">cached</span> : null}
               {data.stale ? <span className="badge badge--warn">stale</span> : null}
             </p>
@@ -305,7 +316,19 @@ export function FlightsTab() {
                         key={`${flight.airline}-${flight.depTime}-${flight.price}-${index}`}
                         className={best ? 'flight flight--best' : 'flight'}
                       >
-                        <span className="flight-price num">{formatPrice(flight.price)}</span>
+                        <span className="flight-cost">
+                          <span className="flight-price num">{formatPrice(flight.price)}</span>
+                          <a
+                            className="flight-source"
+                            href={current.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open this search on Google Flights"
+                            aria-label={`Open the Google Flights search for ${flight.airline} ${formatPrice(flight.price)}, departing ${flight.depTime}`}
+                          >
+                            ↗
+                          </a>
+                        </span>
                         <span className="flight-airline">
                           {flight.airline}
                           {best ? <span className="badge badge--best">cheapest</span> : null}

@@ -202,7 +202,7 @@ export async function searchFares({
         ? { previous_price: prev.price, delta: cheapest.price - prev.price, previous_fetched_at: prev.fetched_at }
         : null;
 
-      results.push({ outbound: s.outbound, ret: s.ret, cards, parsed: flights.length, unmatched, cheapest, change, flights });
+      results.push({ outbound: s.outbound, ret: s.ret, url, cards, parsed: flights.length, unmatched, cheapest, change, flights });
 
       if (history) {
         history.data.runs[historyKey(origin, dest, s)] = {

@@ -56,6 +56,8 @@ test('searchFares: builds a one-way document from the saved page', async () => {
     assert.equal(doc.results[0].cards, 16);
     assert.equal(doc.results[0].parsed, 8);
     assert.equal(doc.results[0].ret, null);
+    // provenance: the result must cite the exact search URL it was scraped from
+    assert.equal(doc.results[0].url, fake.calls[0].url);
     assert.equal(doc.cheapest_overall.price, 59);
     assert.equal(doc.cheapest_overall.airline, 'AirAsia');
     assert.equal(doc.cheapest_date, '2099-01-10');
@@ -73,6 +75,9 @@ test('searchFares: sweep expands consecutive departure days', async () => {
     assert.equal(fake.calls.length, 3, 'sweep 2 means three searches');
     assert.deepEqual(doc.results.map((r) => r.outbound), ['2099-01-10', '2099-01-11', '2099-01-12']);
     assert.equal(doc.swept_days, 3);
+    // each swept day carries its own deep link, so the UI never cites the wrong search
+    assert.equal(new Set(doc.results.map((r) => r.url)).size, 3);
+    assert.deepEqual(doc.results.map((r) => r.url), fake.calls.map((c) => c.url));
     assert.match(doc.summary, /Scanned 3 departure days/);
   } finally {
     fake.restore();

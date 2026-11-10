@@ -126,6 +126,8 @@ export interface FlightPriceChange {
 export interface FlightResult {
   outbound: string;
   ret?: string | null;
+  /** Exact Google Flights search that produced this date's fares (provenance link). */
+  url: string;
   cards: number;
   parsed: number;
   cheapest: Flight;

@@ -205,6 +205,7 @@ metadata:
     {
       "outbound": "2026-11-18",
       "ret": "2026-11-25",
+      "url": "https://www.google.com/travel/flights/search?tfs=...&hl=en-US&gl=US",
       "cards": 16, "parsed": 8,
       "cheapest": {
         "price": 62, "stops": "Nonstop", "airline": "AirAsia",
@@ -222,6 +223,11 @@ metadata:
 Cache successful responses in memory for 10 minutes keyed by the full query; on a
 scrape failure return HTTP 502 with the error envelope. A cached-but-stale entry may be
 served with `"cached": true` and a `"stale": true` marker if the fresh fetch fails.
+
+`results[].url` is the exact Google Flights search that produced that date's fares — the
+same `tfs` token the server scraped. It is the provenance link the UI shows next to each
+price: Google does not expose a stable per-itinerary URL, so a fare links to its dated
+search rather than to the individual flight.
 
 ---
 
