@@ -37,6 +37,22 @@ function LiveStatus({ live, vehicleCount }: { live: LiveState; vehicleCount: num
     );
   }
 
+  if (live.status === 'error' && live.last) {
+    // Transient poll failure with data still on screen: say so quietly and keep
+    // the numbers. A red "request failed" box next to "4 live vehicles" reads as
+    // broken when the app is in fact retrying every few seconds.
+    return (
+      <p className="live-line">
+        <span className="live-dot live-dot--stale" />
+        Can’t reach the server — retrying
+        <span className="muted small">
+          · last update {formatClock(live.last.updatedAt)} · {vehicleCount} live vehicle
+          {vehicleCount === 1 ? '' : 's'}
+        </span>
+      </p>
+    );
+  }
+
   const data = live.status === 'ready' ? live.data : live.status === 'error' ? live.last : null;
   if (!data) return null;
 
@@ -175,12 +191,17 @@ export function RouteView({ name }: { name: string }) {
 
             {live.state.status === 'error' ? (
               <div className="panel-notice">
-                <ErrorNotice compact error={live.state.error} onRetry={live.retry} />
                 {live.state.last ? (
-                  <p className="muted small">
-                    Showing the last successful update ({formatClock(live.state.last.updatedAt)}).
+                  <p className="panel-note">
+                    Showing the last successful update from{' '}
+                    {formatClock(live.state.last.updatedAt)}.
+                    <button type="button" className="link-button" onClick={live.retry}>
+                      Retry now
+                    </button>
                   </p>
-                ) : null}
+                ) : (
+                  <ErrorNotice compact error={live.state.error} onRetry={live.retry} />
+                )}
               </div>
             ) : null}
 
