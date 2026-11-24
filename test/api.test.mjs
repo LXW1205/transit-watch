@@ -4,8 +4,8 @@
 // Offline by construction:
 //   - DATA_DIR is a temp dir holding the cached zip with a fresh mtime, so
 //     loadModel() never re-downloads;
-//   - the AVL websocket is replaced by a preloaded stub (--import), so /live never
-//     opens a real socket but still exercises the real ETA path;
+//   - the AVL API is replaced by a preloaded fetch stub (--import), so /live never
+//     leaves the process but still exercises the real ETA path;
 //   - /api/flights is only called with a past date, which fails validation before
 //     any fetch.
 //
@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url';
 
 import { REPO_ROOT, SKIP_GTFS, freshDataDir, removeDir } from './helpers/gtfs-cache.mjs';
 
-const STUB_URL = pathToFileURL(path.join(REPO_ROOT, 'test', 'helpers', 'stub-websocket.mjs')).href;
+const STUB_URL = pathToFileURL(path.join(REPO_ROOT, 'test', 'helpers', 'stub-avl.mjs')).href;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -145,7 +145,7 @@ test('GET /api/route/T504/live → 200, boolean live flags, sane ETA minutes', {
   assert.equal(body.route, 'T504');
   assert.equal(typeof body.stale, 'boolean');
   assert.ok(Array.isArray(body.vehicles));
-  assert.ok(body.vehicles.length > 0, `stub socket should deliver a bus, stderr:\n${stderr}`);
+  assert.ok(body.vehicles.length > 0, `stub AVL should deliver a bus, stderr:\n${stderr}`);
   assert.equal(body.stale, false, 'freshly collected data is not stale');
 
   for (const v of body.vehicles) {
@@ -153,6 +153,8 @@ test('GET /api/route/T504/live → 200, boolean live flags, sane ETA minutes', {
     assert.equal(v.live, true, 'stub bus has a fresh GPS fix');
     assert.equal(v.status, 'on_trip');
     assert.equal(typeof v.busNo, 'string');
+    // proves the fetch stub answered: a real call would return a plate like VAF5250
+    assert.match(v.busNo, /^STUB/, 'live data must come from the stub, not the network');
   }
 
   assert.ok(Array.isArray(body.directions) && body.directions.length === 1);

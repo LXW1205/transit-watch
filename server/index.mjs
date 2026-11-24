@@ -176,7 +176,12 @@ app.get('/api/route/:name/live', async (req, res) => {
       status: b.status,
       directionId: null,
       progress: null,
-      bearing: null,
+      // GPS heading when the bus is actually moving; the shape-derived bearing
+      // fills in when it is stationary, where a GPS heading is meaningless.
+      bearing:
+        Number.isFinite(Number(b.angle)) && (Number(b.speed_kmh) || 0) >= 3
+          ? Number(b.angle)
+          : null,
       nextStop: null,
     };
   });
@@ -193,7 +198,7 @@ app.get('/api/route/:name/live', async (req, res) => {
     if (!est) continue;
     v.directionId = est.directionId;
     v.progress = est.progress;
-    v.bearing = est.bearing;
+    v.bearing = v.bearing ?? est.bearing;
     v.nextStop = est.nextStop;
   }
 

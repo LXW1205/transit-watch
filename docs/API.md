@@ -17,7 +17,7 @@ implemented against this document in parallel; **do not change a shape unilatera
 | Concern | Source | Status |
 |---|---|---|
 | Timetable, stops, route geometry, trips | data.gov.my GTFS static, `category=rapid-bus-mrtfeeder` | authoritative |
-| Live vehicle positions | MyRapid kiosk Socket.IO (see `scrape_buses.js`) | verified working |
+| Live vehicle positions | MyRapid AVL API, `GET /avl/api/avl/route/<code>` (see `server/lib/live.mjs`) | verified working |
 | Fares | Google Flights, parsed server-side (see `scrape_flights.js`) | verified working |
 
 GTFS static is a ~2 MB zip, redirecting to
@@ -35,9 +35,11 @@ It contains `routes.txt` (91 routes), `trips.txt` (6292), `stop_times.txt` (175 
 - GTFS-RT (`/gtfs-realtime/vehicle-position/prasarana?category=rapid-bus-mrtfeeder`)
   is **not** usable for our routes: 79 vehicles, none on T504/T505, and its
   `route_id` is a display name (`"T155 Inbound"`) rather than the static id.
-- The kiosk socket returns route codes like `T5040` (name + variant digit) and its
-  own `dir` values `"00" | "01" | "02"`. Do not assume `dir` maps 1:1 to GTFS
-  `direction_id`; treat it as opaque and expose it as `direction`.
+- The AVL API takes route codes with a variant digit (`T504` is requested as `T5040`),
+  and returns its own `dir` values `"00" | "01" | "02"`. Do not assume `dir` maps 1:1 to
+  GTFS `direction_id`; treat it as opaque and expose it as `direction`.
+- The old socket.io host (`rapidbus-socketio-avl.prasarana.com.my`) was decommissioned
+  around 2026-11-24; anything that still points at it will report zero vehicles.
 
 ---
 
@@ -116,12 +118,12 @@ Live positions plus per-stop ETA for one route. Polled every ~15 s by the UI.
 {
   "route": "T504",
   "updatedAt": "2026-11-09T14:55:06.000Z",
-  "stale": false,                       // true if the socket had no fresh data (>5 min)
+  "stale": false,                       // true if the source had no fresh data (>5 min)
   "vehicles": [
     {
       "busNo": "VH2531",
-      "route": "T5040",                 // raw socket route code
-      "direction": "02",                // raw socket dir, opaque
+      "route": "T5040",                 // raw AVL route code
+      "direction": "02",                // raw AVL dir, opaque
       "lat": 2.950908, "lng": 101.65678,
       "speedKmh": 12,
       "gpsTime": "2026-11-09 14:55:01", // raw, Asia/Kuala_Lumpur, no offset
@@ -154,7 +156,7 @@ Rules:
   timetable separately).
 - `etaMin` is whole minutes, `>= 0`, and is the *soonest* arrival among live vehicles.
 - A vehicle with `live: false` must not produce an ETA.
-- If the socket is unreachable, return HTTP 200 with `vehicles: []`, `stale: true`,
+- If the AVL API is unreachable, return HTTP 200 with `vehicles: []`, `stale: true`,
   and `directions` intact (ETAs all `null`). The map keeps working, the ETA column empties.
 - `updatedAt` is when the data was collected, not when the request arrived.
 
@@ -173,11 +175,10 @@ If step 2 is ambiguous (e.g. several trips overlap), pick the one minimising
 
 ### Heading
 
-`bearing` is the direction of travel at the vehicle's projection, taken from the
-tangent of the route shape — not from GPS. The kiosk feed carries no heading, and a
-GPS-derived one jitters badly at stops where the bus is stationary; the geometry is
-stable and always agrees with the drawn line. `null` when the vehicle could not be
-snapped to a shape.
+`bearing` is the direction of travel in degrees clockwise from north. While the bus is
+moving (>= 3 km/h) it comes from the feed's own `angle`; when it is stationary that value
+is meaningless, so the tangent of the route shape at the vehicle's projection is used
+instead. `null` when the vehicle is stopped and could not be snapped to a shape.
 
 ---
 

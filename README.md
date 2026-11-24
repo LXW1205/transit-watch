@@ -27,7 +27,7 @@ Production: `npm run build && npm start` — the server serves `dist/` and the A
 ```
 server/index.mjs        Express API — see docs/API.md for the frozen contract
 server/lib/gtfs.mjs     data.gov.my GTFS static: download, cache, parse, index
-server/lib/live.mjs     kiosk Socket.IO collector → vehicle positions
+server/lib/live.mjs     MyRapid AVL API collector → vehicle positions
 server/lib/eta.mjs      delay-based ETA from timetable + live position
 server/lib/flights.mjs  Google Flights fetch + parse (+ 10 min cache)
 web/src/                Vite + React + TypeScript + Leaflet
@@ -40,12 +40,12 @@ scrape_*.js             standalone CLIs over the same libs
 | Concern | Source | Status |
 |---|---|---|
 | Timetable, stops, shapes, trips | [data.gov.my GTFS static](https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-mrtfeeder) | authoritative |
-| Live vehicle positions | MyRapid kiosk Socket.IO | verified working |
+| Live vehicle positions | MyRapid AVL API `/avl/api/avl/route/<code>` | verified working |
 | Fares | Google Flights (server-rendered HTML) | verified working |
 
 **GTFS-RT is not usable for these routes** — the feed carries ~79 vehicles but none on
 T504/T505, and its `route_id` is a display name (`"T155 Inbound"`), not the static id.
-That is why live positions still come from the kiosk socket.
+That is why live positions come from MyRapid's own AVL API instead.
 
 ETAs are ours to compute: there is no trip-update feed. `server/lib/eta.mjs` snaps each
 vehicle to the route shape, finds the scheduled trip that best explains its current
@@ -59,18 +59,22 @@ is empty. Static `route_id` is numeric (`T504` = `30000150`). Stop ids served ar
 `stop_code` values (`SP398`). The calendar covers a rolling ~4 weeks, so the feed expires
 and must be refreshed.
 
-**Kiosk socket** — three things are required or nothing is ever pushed: open the namespace
-(`40`), emit `onFts-reload` **with an ack id** (`421[...]`), and send an **inline object**
-payload (not a stringified string). Answer engine.io pings (`2` → `3`). The payload is
-`base64(gzip(json))`. Route codes come back as `T5040`, and `dir` is opaque.
+**MyRapid AVL API** — the kiosk page changed backends (seen 2026-11-24). The old
+socket.io host `rapidbus-socketio-avl.prasarana.com.my` is **dead** (TCP unreachable), and
+`/kiosk` now reads `GET /avl/api/avl/route/<code>`, with a Pusher channel
+`avl.route.<code>` for push. The REST route is what we use: plain JSON, no handshake, and
+no browser headers needed. Route codes carry a variant digit — `T504` is `T5040`; the
+collector tries `<name>0` then `<name>`. Records include `angle` (GPS heading),
+`busstop_id` and `is_inside_endstop`, which the old feed never had.
 
 **Google Flights** — dates must be in the future (past dates return HTTP 200 with an empty
 result set). The `tfs` param is a URL-safe-base64 protobuf; **field 2 must be omitted for
 one-way** or the search silently returns nothing. Labels contain a U+202F narrow no-break
 space before `AM/PM`.
 
-**MyRapid's HTML host sits behind Imperva Incapsula** — `curl`/`fetch` gets a JS challenge
-there. The websocket host is not challenged, which is why the socket path works from a script.
+**MyRapid's HTML host sits behind Imperva Incapsula** — `curl`/`fetch` of a *page* gets a JS
+challenge. The `/avl/api/...` paths are not challenged, so the collector runs from a plain
+script. (The old websocket-only quirk no longer applies: that host is gone.)
 
 ## API
 
@@ -110,7 +114,7 @@ npm test        # node:test — 46 tests, ~5 s
 ```
 
 The suite is offline-safe: GTFS-dependent tests skip when `data/gtfs_rapid_bus_mrtfeeder.zip`
-is absent, and the flight tests run against a saved HTML fixture. A stub websocket is
+is absent, and the flight tests run against a saved HTML fixture. A stub `fetch` is
 preloaded into the spawned API server so the live path runs without network.
 
 ## Known limitations

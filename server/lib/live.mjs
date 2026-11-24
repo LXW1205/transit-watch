@@ -1,154 +1,137 @@
-// MyRapid kiosk AVL socket collector — live bus positions for the MRT feeder routes.
+// Live vehicle positions for MyRapid routes.
 //
-//   import { collectPositions } from './lib/live.mjs';
-//   const { ok, error, fetchedAt, routes } = await collectPositions(['T504'], { timeoutMs: 20000 });
+// The kiosk page migrated its backend (observed 2026-11-24): the old
+// socket.io host `rapidbus-socketio-avl.prasarana.com.my` is gone (TCP
+// unreachable), and `/kiosk` now reads
 //
-// Importing this module does nothing: it opens a socket only when called, and every
-// call owns its own socket and timers, so concurrent callers cannot interfere.
+//   GET https://myrapidbus.prasarana.com.my/avl/api/avl/route/<code>
+//   wss://myrapidbus.prasarana.com.my/avl/app/<key>   (Pusher, channel avl.route.<code>)
 //
-// The protocol, all of it required (see README.md for the write-up):
-//   1. wss://rapidbus-socketio-avl.prasarana.com.my/socket.io/?EIO=4&transport=websocket
-//   2. open the namespace: send "40", wait for '40{"sid":...}'
-//   3. emit 'onFts-reload' WITH an ack id: '421["onFts-reload",{...}]'
-//      - without the ack id the handler's callback is never invoked → no data, ever
-//      - the payload must be an inline object, not a stringified string
-//   4. server replies 'onFts-client' with base64(gzip(json))
-//   5. answer Engine.IO pings: on '2', reply '3'
+// The REST route is what we use: plain JSON, no handshake, no gzip, and it is
+// reachable without browser headers. It is strictly better than the old feed —
+// it carries `angle` (GPS heading), `busstop_id` and `is_inside_endstop`, and
+// `source: "traccar"` tells us the upstream.
 //
-// A run that receives payloads is a success even if it ends with 0 buses: at night
-// that is the true answer. Only zero payloads within the timeout is an error.
-
-import zlib from 'node:zlib';
+// Route codes carry a variant digit: T504 is served as `T5040`. We try the
+// suffixed code first and fall back to the bare name.
 
 export const PROVIDER = 'RKL';
-export const AVL_URL = 'https://rapidbus-socketio-avl.prasarana.com.my/socket.io/?EIO=4&transport=websocket';
-// session id scraped from https://myrapidbus.prasarana.com.my/kiosk?route=1043
-// (not validated server-side; the HTML host sits behind Incapsula but this
-// websocket host does not, which is why the socket path works from a script)
-const PAGE_SID = 'tv87hhbjs4ppcknvr5b41m1nmqcg0gea';
+export const AVL_API = 'https://myrapidbus.prasarana.com.my/avl/api/avl/route';
 
-// trip_rev_kind legend, taken from the kiosk page's icon mapping
-const STATUS = { '00': 'on_trip', '99': 'off_trip', '01': 'contingency', '03': 'contingency', '05': 'contingency' };
+// trip_rev_kind legend, from the kiosk page's icon mapping
+const STATUS = {
+  '00': 'on_trip',
+  '99': 'off_trip',
+  '01': 'contingency',
+  '03': 'contingency',
+  '05': 'contingency',
+};
 
-// "T504" should match route "T504" or the variant "T5040" (name + direction digit),
-// but must NOT let "T50" swallow "T504".
+// A route name matches `<name>` or `<name><digit>` (T504 → T5040), without
+// letting T50 swallow T504.
 export const routeMatches = (actual, name) =>
-  new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d?$`).test(String(actual || ''));
+  new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d?$`).test(String(actual ?? ''));
 
-// GPS fixes older than 5 min are stale — the kiosk page uses the same cutoff.
+// The kiosk page treats GPS older than 5 minutes as stale; we mirror that.
 export const LIVE_AGE_S = 300;
 
-/**
- * Collect live positions for `routes` (route names such as T504).
- * Resolves — never rejects — with
- *   { ok, error: { reason, detail } | null, fetchedAt, routes: { T504: { buses: [...] } } }
- * Each bus record:
- *   { bus_no, route, direction, lat, lng, speed_kmh, status, gps_time, gps_age_s, live }
- */
-export function collectPositions(routes, { timeoutMs = 30_000, log = () => {} } = {}) {
-  const names = [...new Set(routes)];
-  const collectedAt = Date.now();
-  const out = Object.fromEntries(names.map((r) => [r, { buses: [] }]));
+const codeCandidates = (name) => [...new Set([`${name}0`, String(name)])];
 
-  return new Promise((resolve) => {
-    let ws;
-    let ackId = 0;
-    let settled = false;
-    let receivedPayloads = 0;
-    let idleTimer = null;
-    let error = null;
+async function fetchRouteVehicles(name, { timeoutMs, log }) {
+  let lastError = null;
 
-    const timer = setTimeout(() => finish(receivedPayloads === 0
-      ? { reason: 'no_payload', detail: `no data from the AVL socket within ${timeoutMs}ms` }
-      : null), timeoutMs);
-
-    function finish(err) {
-      if (settled) return;
-      settled = true;
-      error = err;
-      clearTimeout(timer);
-      clearTimeout(idleTimer);
-      try { ws?.close(); } catch { /* already gone */ }
-      resolve({
-        ok: !err,
-        error: err ? { reason: err.reason, detail: err.detail } : null,
-        fetchedAt: new Date().toISOString(),
-        routes: out,
-      });
-    }
-
+  for (const code of codeCandidates(name)) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      ws = new WebSocket(AVL_URL);
+      const res = await fetch(`${AVL_API}/${encodeURIComponent(code)}`, {
+        signal: ctrl.signal,
+        headers: { accept: 'application/json' },
+      });
+      if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status} for ${code}`), { reason: `http_${res.status}` });
+      const body = await res.json();
+      const vehicles = Array.isArray(body?.vehicles) ? body.vehicles : [];
+      // An empty list may mean "wrong code variant" — only then try the next one.
+      if (vehicles.length === 0 && code !== codeCandidates(name).at(-1)) {
+        log(`live: ${code} returned no vehicles, trying the next code variant`);
+        continue;
+      }
+      return vehicles;
     } catch (e) {
-      finish({ reason: 'connect', detail: e.message });
-      return;
+      lastError = e.name === 'AbortError'
+        ? Object.assign(new Error(`no response in ${timeoutMs}ms for ${code}`), { reason: 'timeout' })
+        : Object.assign(e, { reason: e.reason ?? 'network' });
+      log(`live: ${code} failed — ${lastError.message}`);
+    } finally {
+      clearTimeout(timer);
     }
+  }
 
-    ws.addEventListener('error', (e) => finish({ reason: 'connect', detail: String(e.message || e) }));
+  throw lastError ?? Object.assign(new Error(`no route code matched ${name}`), { reason: 'no_code' });
+}
 
-    ws.addEventListener('message', (ev) => {
-      const raw = typeof ev.data === 'string' ? ev.data : '';
-      if (raw[0] === '0') { ws.send('40'); return; }             // engine.io OPEN → socket.io CONNECT
-      if (raw[0] === '2') { ws.send('3'); return; }              // engine.io PING → PONG
-      if (raw.startsWith('40')) {                                // namespace open → subscribe
-        setTimeout(() => {
-          for (const route of names) {
-            const payload = { sid: PAGE_SID, uid: '', provider: PROVIDER, route };
-            ws.send(`42${++ackId}["onFts-reload",${JSON.stringify(payload)}]`);
-            log(`live: subscribed to ${route}`);
-          }
-        }, 300);
-        return;
-      }
-      if (raw[0] === '4' && raw[1] === '3') return;              // socket.io ACK
-      if (raw[0] !== '4' || raw[1] !== '2') return;
+function toBus(v, now) {
+  const gpsMs = Date.parse(String(v.dt_gps ?? '').replace(' ', 'T') + '+08:00');
+  const ageS = Number.isNaN(gpsMs) ? null : Math.max(0, Math.round((now - gpsMs) / 1000));
+  const angle = Number(v.angle);
+  return {
+    bus_no: v.bus_no,
+    route: v.route,
+    direction: v.dir,
+    lat: Number(v.latitude),
+    lng: Number(v.longitude),
+    speed_kmh: Number(v.speed) || 0,
+    status: STATUS[v.trip_rev_kind] ?? `unknown(${v.trip_rev_kind})`,
+    gps_time: v.dt_gps,
+    gps_age_s: ageS,
+    live: ageS !== null && ageS <= LIVE_AGE_S,
+    // extras the old feed did not carry
+    angle: Number.isFinite(angle) ? angle : null,
+    busstop_id: v.busstop_id ?? null,
+    at_stop: v.is_inside_endstop ?? null,
+    source: v.source ?? null,
+  };
+}
 
-      let args;
-      try { args = JSON.parse(raw.slice(2)); } catch { return; }
-      if (args[0] !== 'onFts-client') return;
+/**
+ * Collect live positions for the given route names.
+ *
+ * @returns {Promise<{ok: boolean, fetchedAt: string, routes: Record<string,{buses: object[]}>, error?: {reason: string, detail: string}}>}
+ *   An empty route is a successful answer; only a transport failure sets ok:false.
+ */
+export async function collectPositions(routes, { timeoutMs = 10_000, log = () => {} } = {}) {
+  const fetchedAt = new Date().toISOString();
+  const now = Date.now();
+  const names = [...new Set(routes)];
+  const out = Object.fromEntries(names.map((n) => [n, { buses: [] }]));
+  const failures = [];
 
-      let data;
-      try {
-        data = JSON.parse(zlib.gunzipSync(Buffer.from(args[1], 'base64')).toString('utf8'));
-      } catch (e) {
-        finish({ reason: 'decode', detail: `gunzip/parse failed: ${e.message}` });
-        return;
-      }
-      receivedPayloads++;
+  const settled = await Promise.allSettled(
+    names.map(async (name) => [name, await fetchRouteVehicles(name, { timeoutMs, log })]),
+  );
 
-      for (const b of Object.values(data)) {
-        if (!b || !b.bus_no) continue;
-        const target = names.find((r) => routeMatches(b.route, r));
-        if (!target) continue;
-        const gpsMs = Date.parse(String(b.dt_gps).replace(' ', 'T') + '+08:00');
-        const ageS = Number.isNaN(gpsMs) ? null : Math.max(0, Math.round((collectedAt - gpsMs) / 1000));
-        const rec = {
-          bus_no: b.bus_no,
-          route: b.route,
-          direction: b.dir,
-          lat: b.latitude,
-          lng: b.longitude,
-          speed_kmh: Number(b.speed) || 0,
-          status: STATUS[b.trip_rev_kind] || `unknown(${b.trip_rev_kind})`,
-          gps_time: b.dt_gps,
-          gps_age_s: ageS,
-          live: ageS !== null && ageS <= LIVE_AGE_S,
-        };
-        const bucket = out[target].buses;
-        const i = bucket.findIndex((x) => x.bus_no === rec.bus_no);
-        if (i >= 0) bucket[i] = rec; else bucket.push(rec);
-      }
+  for (const [i, result] of settled.entries()) {
+    const name = names[i];
+    if (result.status === 'rejected') {
+      failures.push({ name, error: result.reason });
+      continue;
+    }
+    const [, vehicles] = result.value;
+    out[name].buses = vehicles
+      .filter((v) => v && v.bus_no && routeMatches(v.route, name))
+      .map((v) => toBus(v, now));
+    log(`live: ${name} → ${out[name].buses.length} vehicle(s)`);
+  }
 
-      // The server sends one payload per onFts-reload, but we can't attribute a
-      // payload to a route until we match buses from it — so a route with no buses
-      // running would otherwise never look "done". Finish once every requested
-      // route has at least one bus, otherwise fall back to an idle window.
-      clearTimeout(idleTimer);
-      if (names.every((r) => out[r].buses.length > 0)) {
-        idleTimer = setTimeout(() => finish(null), 400);
-      } else {
-        idleTimer = setTimeout(() => finish(null), receivedPayloads >= names.length ? 1500 : 5000);
-      }
-    });
-  });
+  if (failures.length === names.length) {
+    const first = failures[0].error;
+    return {
+      ok: false,
+      fetchedAt,
+      routes: out,
+      error: { reason: first?.reason ?? 'network', detail: first?.message ?? String(first) },
+    };
+  }
+
+  return { ok: true, fetchedAt, routes: out };
 }
