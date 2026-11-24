@@ -107,6 +107,28 @@ node scrape_flights.js <ORIGIN> <DEST> <out> [ret] [flags]
 `unexpected_page`, `timeout`, `network`, `empty_results`, `parse_failed` (flights);
 `no_payload`, `connect`, `decode` (buses).
 
+## Mobile app (Expo)
+
+A native client lives in `mobile/` (Expo SDK 58, React Native, `react-native-maps`).
+It talks to the same server and the same contract — no second API.
+
+```bash
+cd mobile
+npm install
+cp .env.example .env        # set EXPO_PUBLIC_API_URL to the homelab LAN/Tailscale address
+npx expo start              # scan the QR with Expo Go
+```
+
+- `EXPO_PUBLIC_API_URL` must be reachable **from the phone**. `localhost` there is the
+  phone itself, so the default is the homelab LAN address (`http://192.168.1.15:8787`);
+  over Tailscale use the tailnet address instead.
+- The map needs **no API key in Expo Go**. A standalone/EAS build does: set
+  `GOOGLE_MAPS_API_KEY` and `mobile/app.config.js` injects it through the
+  `react-native-maps` config plugin.
+- Push notifications (scheduled fare/bus alerts) need a development build — Expo Go
+  dropped Android remote push in SDK 53. The schedule itself belongs on the server,
+  not on the phone, because mobile OSes throttle background work.
+
 ## Tests
 
 ```bash
