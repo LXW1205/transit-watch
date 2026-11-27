@@ -1,0 +1,82 @@
+/* RE:STYLE · tokens.css — look neumorphism·ch-scrapbook#0hou9sg
+ * Single source of truth. Components consume these; no literals.
+ * Contract: docs/DESIGN.md (same directory).
+ */
+
+:root {
+  /* ---- colour (DESIGN.md §3) ---------------------------------------- */
+  --bg: #fdf4e3;
+  --surface: #fbe7c2;
+  --surface-2: #f9dca5;
+  --text: #2c3e50;
+  --text-muted: #597ea2;
+  --primary: #e05b5b;
+  --primary-ink: #000000;
+  --accent: #b0772b;
+  --border: #f6cf84;
+
+  /* Derived ramp: the language is one material, so extra steps are mixed
+     from the tokens rather than invented as new hues. */
+  --surface-3: color-mix(in oklab, var(--surface-2) 70%, var(--text) 8%);
+  /* Secondary text: the contract's --text-muted is 3.5:1 on these surfaces, so
+     small labels take a step of the same ramp that clears AA. Mixed from tokens,
+     never a new hue. */
+  --text-secondary: color-mix(in oklab, var(--text-muted) 55%, var(--text));
+  --primary-soft: color-mix(in oklab, var(--primary) 18%, var(--bg));
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--bg));
+  --ok: #2f6b4f;
+  --warn: #8a5a12;
+  --warn-soft: color-mix(in oklab, var(--accent) 16%, var(--bg));
+  --danger: #a3352f;
+  --danger-soft: color-mix(in oklab, var(--primary) 16%, var(--bg));
+
+  /* ---- shape, depth, line ------------------------------------------- */
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 24px;
+  --corner-treatment: concentric;
+  --border-w: 0px;
+  --divider-style: none;
+
+  /* Dual light/dark outer shadows on same-colour surfaces. This is the whole
+     elevation system: no borders, no outlines. */
+  --shadow: 8px 8px 16px color-mix(in srgb, var(--text) 18%, transparent),
+    -8px -8px 16px color-mix(in srgb, var(--bg) 90%, transparent);
+  --shadow-hover: 4px 4px 8px color-mix(in srgb, var(--text) 18%, transparent),
+    -4px -4px 8px color-mix(in srgb, var(--bg) 90%, transparent);
+  /* Pressed states invert inward — the look's signature. */
+  --shadow-inset: inset 4px 4px 8px color-mix(in srgb, var(--text) 16%, transparent),
+    inset -4px -4px 8px color-mix(in srgb, var(--bg) 88%, transparent);
+  --glow: none;
+
+  /* ---- type ---------------------------------------------------------- */
+  --font-display: 'Cinzel', Georgia, 'Times New Roman', serif;
+  --font-body: 'Spectral', Georgia, serif;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+  --font-display-weight: 500;
+  --font-display-tracking: 0;
+  --font-scale: 1;
+
+  /* ---- motion (spring 320/28/1 baked to linear()) -------------------- */
+  --ease: linear(0, 0.066 5%, 0.217 10%, 0.385 15%, 0.546 20%, 0.69 25%, 0.799 30%, 0.881 35%, 0.94 40%, 0.978 45%, 1.001 50%, 1.012 55%, 1.017 60%, 1.018 65%, 1.016 70%, 1.013 75%, 1.01 80%, 1.007 85%, 1.005 90%, 1.003 95%, 1);
+  --dur: 447ms;
+  --dur-fast: 120ms;
+  --dur-slow: 360ms;
+  --stagger: 60ms;
+  --motion-model: spring;
+  --spring-stiffness: 320;
+  --spring-damping: 28;
+  --spring-mass: 1;
+  --motion-reduced: fade;
+  --mv-micro: 140ms;
+
+  /* ---- hero / media --------------------------------------------------- */
+  --media-fit: cover;
+  --media-bezel: 8px;
+  --media-floor: 0.45;
+  --media-lift: 0.6;
+
+  /* ---- layout --------------------------------------------------------- */
+  --layout-width: wide;
+  --font-body-leading: 1.6;
+}

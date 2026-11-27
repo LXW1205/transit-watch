@@ -1,0 +1,84 @@
+/* RE:STYLE · motion.css — the look's motion axis.
+ * Model: spring (stiffness 320, damping 28, mass 1) baked to the --ease token.
+ * Stagger 60ms. Reduced-motion policy: fade.
+ *
+ * Usage: <li class="rs-enter" style="--i:0">, <div class="rs-hover-lift">,
+ *        <button class="rs-press">, <div class="rs-fade">
+ */
+
+@keyframes rs-motion-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rs-motion-enter-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.rs-enter {
+  animation: rs-motion-enter var(--dur) var(--ease) both;
+  animation-delay: calc(var(--stagger) * var(--i, 0));
+}
+
+.rs-enter-slow {
+  animation-duration: var(--dur-slow);
+}
+
+.rs-enter-fast {
+  animation-duration: var(--dur-fast);
+}
+
+.rs-hover-lift {
+  transition:
+    transform var(--mv-micro) var(--ease),
+    box-shadow var(--mv-micro) var(--ease);
+}
+
+.rs-hover-lift:hover,
+.rs-hover-lift:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.rs-press {
+  transition: transform var(--mv-micro) var(--ease);
+}
+
+.rs-press:active {
+  transform: scale(0.98);
+}
+
+.rs-fade {
+  transition: opacity var(--dur) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs-enter {
+    animation-name: rs-motion-enter-fade;
+    animation-duration: 120ms;
+    animation-delay: 0ms;
+  }
+
+  .rs-hover-lift,
+  .rs-press {
+    transition-property: opacity, color, background-color, border-color, box-shadow;
+    transition-duration: 120ms;
+  }
+
+  .rs-hover-lift:hover,
+  .rs-hover-lift:focus-visible,
+  .rs-press:active {
+    transform: none;
+  }
+}

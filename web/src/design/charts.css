@@ -1,0 +1,98 @@
+/* RE:STYLE · charts.css — bar / line / spark recipes.
+ * Colour comes only from role tokens, so any palette swap recolours every
+ * chart. Accessible shell: .rs-chart-figure + role="img" + .rs-chart-sr table.
+ */
+
+.rs-chart {
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  padding: calc(var(--font-scale) * 12px) calc(var(--font-scale) * 14px);
+}
+
+.rs-chart-title {
+  font-family: var(--font-display), serif;
+  font-size: calc(var(--font-scale) * 14px);
+  margin: 0 0 calc(var(--font-scale) * 10px);
+  letter-spacing: 0.02em;
+}
+
+.rs-chart-caption {
+  font-family: var(--font-mono), monospace;
+  font-size: calc(var(--font-scale) * 11px);
+  color: var(--text-muted);
+  margin: calc(var(--font-scale) * 6px) 0 0;
+}
+
+.rs-chart-figure {
+  margin: 0;
+}
+
+.rs-chart-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rs-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: calc(var(--font-scale) * 120px);
+}
+
+.rs-chart-bar {
+  flex: 1;
+  height: var(--v, 40%);
+  min-height: 3px;
+  background: var(--primary);
+  opacity: 0.85;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition:
+    height var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.rs-chart-bar:nth-child(3n) {
+  background: var(--accent);
+}
+
+.rs-chart-bar:hover {
+  opacity: 1;
+}
+
+.rs-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: calc(var(--font-scale) * 8px);
+  font-size: calc(var(--font-scale) * 11px);
+  color: var(--text-muted);
+}
+
+.rs-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rs-chart-legend span::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+.rs-chart-legend .is-accent::before {
+  background: var(--accent);
+}

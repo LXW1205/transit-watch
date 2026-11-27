@@ -35,6 +35,20 @@ test/                   node:test suite, offline-safe
 scrape_*.js             standalone CLIs over the same libs
 ```
 
+## Design language
+
+The UI follows a RE:STYLE look — **neumorphism · ch-scrapbook** (`0hou9sg`). The
+contract is `docs/DESIGN.md`; the machine-readable tokens are
+`web/src/design/tokens.css`, imported before the product styles. Recipes for
+motion and charts live beside them (`motion.css`, `charts.css`).
+
+- One material: everything is carved from `--bg` with dual light/dark shadows;
+  there are no borders and no dividers.
+- One accent: `--primary` for actions and active state, `--accent` (bronze) for
+  links and focus rings. Nothing else is coloured.
+- Type: Cinzel (display) · Spectral (body) · Space Mono (data), via `@fontsource`.
+- The look is light-only; the previous `prefers-color-scheme` variant is gone.
+
 ## Data sources
 
 | Concern | Source | Status |

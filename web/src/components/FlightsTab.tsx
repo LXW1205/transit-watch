@@ -10,6 +10,7 @@ import {
 } from '../format';
 import { useResource } from '../hooks';
 import { EmptyNotice, ErrorNotice, Loading } from './Notice';
+import { StatCard } from './StatCard';
 import type { FlightQuery } from '../api';
 import type { Flight, FlightResult } from '../types';
 
@@ -24,11 +25,19 @@ interface FormState {
   sweep: number;
 }
 
+// Defaults are relative so the form never opens on a date the API rejects
+// (`past_date`) — the contract requires future dates.
+const inDays = (days: number): string => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
 const DEFAULTS: FormState = {
   from: 'KBR',
   to: 'KUL',
-  out: '2026-11-18',
-  ret: '2026-11-25',
+  out: inDays(21),
+  ret: inDays(28),
   oneWay: false,
   sweep: 0,
 };
@@ -237,6 +246,26 @@ export function FlightsTab() {
             </p>
           </div>
 
+          <div className="stats">
+            <StatCard
+              value={formatPrice(data.cheapestOverall?.price ?? 0)}
+              label="Cheapest fare"
+              caption={data.cheapestOverall?.stops}
+              index={0}
+            />
+            <StatCard
+              value={data.cheapestOverall?.airline ?? '—'}
+              label="Airline"
+              index={1}
+            />
+            <StatCard
+              value={formatDate(data.cheapestDate)}
+              label="Cheapest day"
+              caption={`scanned ${data.sweptDays} day${data.sweptDays === 1 ? '' : 's'}`}
+              index={2}
+            />
+          </div>
+
           {results.length === 0 ? <EmptyNotice>No fares came back for these dates.</EmptyNotice> : null}
 
           {results.length > 1 ? (
@@ -310,7 +339,10 @@ export function FlightsTab() {
               ) : (
                 <ul className="flight-list">
                   {rows.map((flight, index) => {
-                    const best = flight.price === cheapestPrice;
+                    // Ties are real, but marking six rows "cheapest" says nothing.
+                    // Mark the first fare at the lowest price; the price column
+                    // already shows the rest are equal.
+                    const best = index === rows.findIndex(f => f.price === cheapestPrice);
                     return (
                       <li
                         key={`${flight.airline}-${flight.depTime}-${flight.price}-${index}`}

@@ -15,7 +15,10 @@ export function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Transit Watch</h1>
+        <h1 className="wordmark">
+          <span className="wordmark-mark" aria-hidden="true" />
+          <span>Transit Watch</span>
+        </h1>
         <nav className="tabs" role="tablist" aria-label="Dashboard">
           {TABS.map(item => (
             <button
